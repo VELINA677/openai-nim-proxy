@@ -1,4 +1,4 @@
-// server.js - HYBRID Anti-Error 400 (DeepSeek V4 & GLM)
+// server.js - HYBRID Anti-Error 400 (DeepSeek V4 & GLM - CLEAN FIXED)
 // ============================================================================
 const express = require('express');
 const cors = require('cors');
@@ -28,7 +28,7 @@ function filterClassicReasoning(text) {
 }
 
 const MODEL_MAPPING = {
-  'gpt-4o': 'deepseek-ai/deepseek-v4-pro', // UPDATE KE V4 PRO
+  'gpt-4o': 'deepseek-ai/deepseek-v4-pro', 
   'claude-3-sonnet': 'z-ai/glm4.7',
   'gemini-pro': 'z-ai/glm-5.2',
   'gpt-4o-latest': 'deepseek-ai/deepseek-v4-flash',
@@ -40,7 +40,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     let nimModel = MODEL_MAPPING[model] || model;
     
     const isGLM = nimModel.toLowerCase().includes('glm');
-    const isDeepSeekV4 = nimModel.toLowerCase().includes('deepseek-v4');
 
     // ============================================================================
     // 🛡️ FIX 1: SANITIZE MESSAGES 
@@ -54,7 +53,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       if (sanitizedMessages.length > 0 && sanitizedMessages[sanitizedMessages.length - 1].role === role) {
         sanitizedMessages[sanitizedMessages.length - 1].content += "\n\n" + m.content;
       } else {
-        // DeepSeek V4 perlukan kita simpan 'reasoning_content' jika wujud di message history
         let newMsg = { role: role, content: m.content };
         if (m.reasoning_content) {
             newMsg.reasoning_content = m.reasoning_content;
@@ -64,10 +62,9 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
 
     // ============================================================================
-    // 🛡️ FIX 2: INJECT THINKING MODE (BERBEZA IKUT MODEL)
+    // 🛡️ FIX 2: INJECT THINKING MODE (GLM ONLY)
     // ============================================================================
     if (ENABLE_THINKING_MODE && isGLM && sanitizedMessages.length > 0) {
-      // GLM: Guna prompt suntikan manual (Macam asal)
       const thinkingPrompt = "\n\n[SYSTEM INSTRUCTION: You must think deeply before answering. Start your response with <think> followed by your reasoning, then close it with </think> before giving the final answer.]";
       if (sanitizedMessages[sanitizedMessages.length - 1].role === 'user') {
         sanitizedMessages[sanitizedMessages.length - 1].content += thinkingPrompt;
@@ -76,7 +73,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    // Persediaan Request Standard
+    // Payload standard tanpa extra_body/reasoning_effort yang menyusahkan
     let nimRequest = {
       model: nimModel,
       messages: sanitizedMessages,
@@ -84,12 +81,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       max_tokens: max_tokens || 4096,
       stream: stream || false
     };
-
-    // DeepSeek V4: Gunakan API Payload Khas (Native Thinking API)
-    if (ENABLE_THINKING_MODE && isDeepSeekV4) {
-      nimRequest.extra_body = { thinking: { type: "enabled" } };
-      nimRequest.reasoning_effort = "high"; // Boleh tukar "max" atau buang
-    }
 
     const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
       headers: {
@@ -100,7 +91,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     });
 
     // ============================================================================
-    // 🛡️ STREAMING LOGIC - DIBUAT KHAS UNTUK DEEPSEEK REASONING_CONTENT
+    // 🛡️ STREAMING LOGIC - DEEPSEEK & GLM
     // ============================================================================
     if (stream) {
       res.setHeader('Content-Type', 'text/event-stream');
@@ -130,7 +121,6 @@ app.post('/v1/chat/completions', async (req, res) => {
             // 1. Tangkap DeepSeek V4 Native Reasoning
             if (delta.reasoning_content) {
                 if (SHOW_REASONING) {
-                    // Kalau nak tunjuk, kita "cheat" sikit jadikan ia teks biasa pakai blockquote
                     delta.content = `> [Thinking]: ${delta.reasoning_content}\n\n`;
                     delete delta.reasoning_content; 
                     sendData = true;
@@ -153,13 +143,11 @@ app.post('/v1/chat/completions', async (req, res) => {
                 }
             }
 
-            // Hantar hanya jika melepasi tapisan
             if (sendData) {
                 res.write(`data: ${JSON.stringify(jsonData)}\n\n`);
             }
 
           } catch (e) {
-            // Kalau gagal parse, hantar terus untuk elak putus
             if (!isInsideThink) res.write(`${trimmed}\n\n`);
           }
         }
@@ -174,10 +162,8 @@ app.post('/v1/chat/completions', async (req, res) => {
       if (!SHOW_REASONING && response.data.choices && response.data.choices[0].message) {
         let msg = response.data.choices[0].message;
         
-        // Bersihkan GLM Classic
         msg.content = filterClassicReasoning(msg.content);
         
-        // Bersihkan DeepSeek V4 Native
         if (msg.reasoning_content) {
             delete msg.reasoning_content;
         }
