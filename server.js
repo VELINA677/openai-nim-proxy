@@ -30,8 +30,8 @@ function filterClassicReasoning(text) {
 const MODEL_MAPPING = {
   'gpt-4o': 'deepseek-ai/deepseek-v4-pro', // UPDATE KE V4 PRO
   'claude-3-sonnet': 'z-ai/glm4.7',
-  'gemini-pro': 'z-ai/glm-5.1',
-  'gpt-4o-latest': 'deepseek-ai/deepseek-v3.1-terminus',
+  'gemini-pro': 'z-ai/glm-5.2',
+  'gpt-4o-latest': 'deepseek-ai/deepseek-v4-flash',
 };
 
 app.post('/v1/chat/completions', async (req, res) => {
